@@ -21,7 +21,7 @@ class xcodeproj_t:
         print(self.xcodeproj, self.targ, self.product)    
 
 parser = argparse.ArgumentParser(description='Fix variables of workspace or project.')
-parser.add_argument('--workspace', '-w',
+parser.add_argument('--workspace', '-w', required=True,
                     help='target workspace')
 parser.add_argument('--project', '-p',
                     help='target project')
