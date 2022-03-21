@@ -26,128 +26,157 @@ typedef enum targetType
     REM_SUPPORT
 } targetType_t;
 
+typedef enum
+{
+    CLEAN_SDK=0,
+    ADD_HEADER
+} buildsettingOp_t;
+
 void dumpDict(NSDictionary* targDict)
 {
     for(id key in targDict)
         NSLog(@"key=%@ value=%@", key, [targDict objectForKey:key]);
 }
 
-void parseBuildConfiguration(NSMutableDictionary* objects, NSString* buildConfigurationList, targetType_t isRoot, NSString* productType)
+void cleanSdk(targetType_t isRoot, NSString* productType, NSMutableDictionary* buildSettings)
 {
-    NSDictionary* XCConfigurationList = [objects objectForKey:buildConfigurationList];
-    NSArray* buildConfigurations = [XCConfigurationList objectForKey:@"buildConfigurations"];
-    for (id debRelConfig in buildConfigurations)
+//        save the pbxproj's sdkroot and deployment target
+    NSString* sdkroot = [buildSettings objectForKey:@"SDKROOT"];
+    NSString* iphoneDep = [buildSettings objectForKey:@"IPHONEOS_DEPLOYMENT_TARGET"];
+    NSString* macDep = [buildSettings objectForKey:@"MACOSX_DEPLOYMENT_TARGET"];
+//    (([productType isEqualToString:@"com.apple.product-type.application"] == true) && (iphoneDep == 0));
+//    (([productType isEqualToString:@"com.apple.product-type.tool"] == true) && (macDep == 0));
+
+    bool isApp = [productType isEqualToString:@"com.apple.product-type.application"];
+    bool isTool = [productType isEqualToString:@"com.apple.product-type.tool"];
+
+    [buildSettings removeObjectForKey:@"SUPPORTED_PLATFORMS"];
+    if (isRoot == REM_SUPPORT)
     {
-        NSDictionary* XCBuildConfiguration = [objects objectForKey:debRelConfig];
-        NSMutableDictionary* buildSettings = [XCBuildConfiguration objectForKey:@"buildSettings"];
-        //        save the pbxproj's sdkroot and deployment target
-        NSString* sdkroot = [buildSettings objectForKey:@"SDKROOT"];
-        NSString* iphoneDep = [buildSettings objectForKey:@"IPHONEOS_DEPLOYMENT_TARGET"];
-        NSString* macDep = [buildSettings objectForKey:@"MACOSX_DEPLOYMENT_TARGET"];
-//        (([productType isEqualToString:@"com.apple.product-type.application"] == true) && (iphoneDep == 0));
-//        (([productType isEqualToString:@"com.apple.product-type.tool"] == true) && (macDep == 0));
+        continue;
+    }
+    
+    if (isRoot == ROOT_NODE)
+    {
+        proj_sdkroot_g = sdkroot;
+        if (iphoneDep != 0)
+        {
+            proj_version_g = iphoneDep;
+        }
+        if (macDep != 0)
+        {
+            proj_version_g = macDep;
+        }
+    }
+//    remove the sdkroot if we have found it, we are not pbxproject, we are not an application or tool,
+//        and it does not match with the current one found.
+    if (isRoot == NON_ROOT_NODE)
+    {
+        if (sdkroot != 0)
+        {
+            if ((isApp == false) && (isTool == false))
+            {
+                [buildSettings removeObjectForKey:@"SDKROOT"];
+            }
+        }
+    }
+//    add the new sdkroot if
+//        am pbxproject and sdkroot does not match,
+    if (isRoot == ROOT_NODE)
+    {
+        [buildSettings setObject:sdkroot_g forKey:@"SDKROOT"];
+    }
+    else if ((isRoot == NON_ROOT_NODE) || (isRoot == SPEC_NODE))
+    {
+//    preserve the sdkroot if
+//        couldn't find sdkroot and:
+//            you're an application and newTarget is mac,
+//            or you're a tool and newTarget is iphoneos
+        if ((isRoot == SPEC_NODE) || (sdkroot == 0))
+        {
+            if (isApp == true)
+            {
+                [buildSettings setObject:@"iphoneos" forKey:@"SDKROOT"];
+            }
+            else if (isTool == true)
+            {
+                [buildSettings setObject:@"macosx" forKey:@"SDKROOT"];
+            }
+            else
+            {
+                [buildSettings setObject:sdkroot_g forKey:@"SDKROOT"];
+            }
+        }
+    }
 
-        bool isApp = [productType isEqualToString:@"com.apple.product-type.application"];
-        bool isTool = [productType isEqualToString:@"com.apple.product-type.tool"];
-
-        [buildSettings removeObjectForKey:@"SUPPORTED_PLATFORMS"];
-        if (isRoot == REM_SUPPORT)
+    if (isRoot == ROOT_NODE)
+    {
+        if ([sdkroot_g isEqualToString:@"macosx"] == true)
         {
-            continue;
+            [buildSettings removeObjectForKey:@"IPHONEOS_DEPLOYMENT_TARGET"];
         }
-        
-        if (isRoot == ROOT_NODE)
+        else if ([sdkroot_g isEqualToString:@"iphoneos"] == false)
         {
-            proj_sdkroot_g = sdkroot;
-            if (iphoneDep != 0)
-            {
-                proj_version_g = iphoneDep;
-            }
-            if (macDep != 0)
-            {
-                proj_version_g = macDep;
-            }
+            [buildSettings removeObjectForKey:@"MACOSX_DEPLOYMENT_TARGET"];
         }
-//        remove the sdkroot if we have found it, we are not pbxproject, we are not an application or tool,
-//            and it does not match with the current one found.
-        if (isRoot == NON_ROOT_NODE)
-        {
-            if (sdkroot != 0)
-            {
-                if ((isApp == false) && (isTool == false))
-                {
-                    [buildSettings removeObjectForKey:@"SDKROOT"];
-                }
-            }
-        }
-//        add the new sdkroot if
-//            am pbxproject and sdkroot does not match,
-        if (isRoot == ROOT_NODE)
-        {
-            [buildSettings setObject:sdkroot_g forKey:@"SDKROOT"];
-            //            sdkroot = @"bakaos";
-        }
-        else if ((isRoot == NON_ROOT_NODE) || (isRoot == SPEC_NODE))
-        {
-//        preserve the sdkroot if
-//            couldn't find sdkroot and:
-//                you're an application and newTarget is mac,
-//                or you're a tool and newTarget is iphoneos
-            if ((isRoot == SPEC_NODE) || (sdkroot == 0))
-            {
-                if (isApp == true)
-                {
-                    [buildSettings setObject:@"iphoneos" forKey:@"SDKROOT"];
-                }
-                else if (isTool == true)
-                {
-                    [buildSettings setObject:@"macosx" forKey:@"SDKROOT"];
-                }
-                //            sdkroot = @"bakaos";
-                else
-                {
-                    [buildSettings setObject:sdkroot_g forKey:@"SDKROOT"];
-                }
-            }
-        }
-
-        if (isRoot == ROOT_NODE)
-        {
-            if ([sdkroot_g isEqualToString:@"macosx"] == true)
-            {
-                [buildSettings removeObjectForKey:@"IPHONEOS_DEPLOYMENT_TARGET"];
-            }
-            else if ([sdkroot_g isEqualToString:@"iphoneos"] == false)
-            {
-                [buildSettings removeObjectForKey:@"MACOSX_DEPLOYMENT_TARGET"];
-            }
-        }
-        else if ((isRoot == NON_ROOT_NODE) || (isRoot == SPEC_NODE))
-        {
+    }
+    else if ((isRoot == NON_ROOT_NODE) || (isRoot == SPEC_NODE))
+    {
 //        we wanna remove the key key if we found it,
 //            we are not an app and we are not a tool
 //            we have a different version
-            if ((isApp == false) && (isTool == false))
-            {
+        if ((isApp == false) && (isTool == false))
+        {
 //                    the iphone version dependency doesn't match
-                [buildSettings removeObjectForKey:@"IPHONEOS_DEPLOYMENT_TARGET"];
-                [buildSettings removeObjectForKey:@"MACOSX_DEPLOYMENT_TARGET"];
-            }
-
+            [buildSettings removeObjectForKey:@"IPHONEOS_DEPLOYMENT_TARGET"];
+            [buildSettings removeObjectForKey:@"MACOSX_DEPLOYMENT_TARGET"];
         }
-        
-//        if (((iphoneDep == 0) && (isApp == false) && (isTool == false) && ([iphoneDep isEqualToString:version_g] == true)) == false)
-//        {
-//            [buildSettings removeObjectForKey:@"IPHONEOS_DEPLOYMENT_TARGET"];
-//        }
-//        if (macDep != 0)
-//        {
-//            [buildSettings removeObjectForKey:@"MACOSX_DEPLOYMENT_TARGET"];
-//        }
-        
+
+    }
 //        we wanna add the replacement if we are root
 //        or we are an app or tool
-        if (isRoot == ROOT_NODE)
+    if (isRoot == ROOT_NODE)
+    {
+        if ([sdkroot_g isEqualToString:@"iphoneos"] == true)
+        {
+            [buildSettings setObject:version_g forKey:@"IPHONEOS_DEPLOYMENT_TARGET"];
+        }
+        else if ([sdkroot_g isEqualToString:@"macosx"] == true)
+        {
+            [buildSettings setObject:version_g forKey:@"MACOSX_DEPLOYMENT_TARGET"];
+        }
+    }
+    else
+    {
+        if (isApp == true)
+        {
+            if ([sdkroot_g isEqualToString:@"iphoneos"] == true)
+            {
+                [buildSettings setObject:version_g forKey:@"IPHONEOS_DEPLOYMENT_TARGET"];
+            }
+            else if ([sdkroot_g isEqualToString:@"macosx"] == true)
+            {
+                if (iphoneDep == 0)
+                {
+                    [buildSettings setObject:proj_version_g forKey:@"IPHONEOS_DEPLOYMENT_TARGET"];
+                }
+            }
+        }
+        else if (isTool == true)
+        {
+            if ([sdkroot_g isEqualToString:@"macosx"] == true)
+            {
+                [buildSettings setObject:version_g forKey:@"MACOSX_DEPLOYMENT_TARGET"];
+            }
+            else if ([sdkroot_g isEqualToString:@"iphoneos"] == true)
+            {
+                if (macDep == 0)
+                {
+                    [buildSettings setObject:proj_version_g forKey:@"MACOSX_DEPLOYMENT_TARGET"];
+                }
+            }
+        }
+        else if (isRoot == SPEC_NODE)
         {
             if ([sdkroot_g isEqualToString:@"iphoneos"] == true)
             {
@@ -158,52 +187,27 @@ void parseBuildConfiguration(NSMutableDictionary* objects, NSString* buildConfig
                 [buildSettings setObject:version_g forKey:@"MACOSX_DEPLOYMENT_TARGET"];
             }
         }
-        else
-        {
-            if (isApp == true)
-            {
-                if ([sdkroot_g isEqualToString:@"iphoneos"] == true)
-                {
-                    [buildSettings setObject:version_g forKey:@"IPHONEOS_DEPLOYMENT_TARGET"];
-                }
-                else if ([sdkroot_g isEqualToString:@"macosx"] == true)
-                {
-                    if (iphoneDep == 0)
-                    {
-                        [buildSettings setObject:proj_version_g forKey:@"IPHONEOS_DEPLOYMENT_TARGET"];
-                    }
-                }
-            }
-            else if (isTool == true)
-            {
-                if ([sdkroot_g isEqualToString:@"macosx"] == true)
-                {
-                    [buildSettings setObject:version_g forKey:@"MACOSX_DEPLOYMENT_TARGET"];
-                }
-                else if ([sdkroot_g isEqualToString:@"iphoneos"] == true)
-                {
-                    if (macDep == 0)
-                    {
-                        [buildSettings setObject:proj_version_g forKey:@"MACOSX_DEPLOYMENT_TARGET"];
-                    }
-                }
-            }
-            else if (isRoot == SPEC_NODE)
-            {
-                if ([sdkroot_g isEqualToString:@"iphoneos"] == true)
-                {
-                    [buildSettings setObject:version_g forKey:@"IPHONEOS_DEPLOYMENT_TARGET"];
-                }
-                else if ([sdkroot_g isEqualToString:@"macosx"] == true)
-                {
-                    [buildSettings setObject:version_g forKey:@"MACOSX_DEPLOYMENT_TARGET"];
-                }
-            }
-        }
-//        dumpDict(objects);
-//        NSLog(@"value=%@", [buildSettings objectForKey:@"IPHONEOS_DEPLOYMENT_TARGET"]);
-//        NSLog(@"value=%@", [buildSettings objectForKey:@"MACOSX_DEPLOYMENT_TARGET"]);
+    }
+}
 
+void parseBuildConfiguration(NSMutableDictionary* objects, NSString* buildConfigurationList, targetType_t isRoot, NSString* productType, buildsettingOp_t buildsettingOp)
+{
+    NSDictionary* XCConfigurationList = [objects objectForKey:buildConfigurationList];
+    NSArray* buildConfigurations = [XCConfigurationList objectForKey:@"buildConfigurations"];
+    for (id debRelConfig in buildConfigurations)
+    {
+        NSDictionary* XCBuildConfiguration = [objects objectForKey:debRelConfig];
+        NSMutableDictionary* buildSettings = [XCBuildConfiguration objectForKey:@"buildSettings"];
+        
+        switch (buildsettingOp)
+        {
+            case CLEAN_SDK:
+                cleanSdk(isRoot, productType, buildSettings);
+                break;
+            case ADD_HEADER:
+//                addHeader;
+                break;
+        }
     }
 }
 

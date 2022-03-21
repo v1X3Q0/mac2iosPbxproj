@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.18)
+project(pbxprojManip)
+add_subdirectory(mac2iosPbxproj)
+file(CREATE_LINK ${CMAKE_SOURCE_DIR}/workspaceDeps.py ${CMAKE_CURRENT_BINARY_DIR}/mac2iosPbxproj/workspaceDeps.py)
+# FILE(COPY workspaceDeps.py DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/mac2iosPbxproj)
