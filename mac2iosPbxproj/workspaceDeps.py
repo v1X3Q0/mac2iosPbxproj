@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from bs4 import BeautifulSoup
 import sys
 import argparse
@@ -7,7 +9,10 @@ import ctypes
 import pathlib
 
 # filename, file_extension = os.path.splitext('/path/to/somefile.ext')
-libname = "/Users/mariomain/Library/Developer/Xcode/DerivedData/mac2iosPbxproj-aepknkejeqyaxwdwopsdkajuicxb/Build/Products/Debug/libmac2iosPbxproj.dylib"
+# libname = "/Users/mariomain/Library/Developer/Xcode/DerivedData/mac2iosPbxproj-aepknkejeqyaxwdwopsdkajuicxb/Build/Products/Debug/libmac2iosPbxproj.dylib"
+cwd = os.getcwd()
+cwd = os.path.dirname(os.path.realpath(__file__))
+libname = cwd + "/libmac2iosPbxproj.dylib"
 c_lib = ctypes.CDLL(libname)
 
 xcodeprojList = []
@@ -126,55 +131,6 @@ def main():
                 versionCtype = ctypes.c_char_p(bytes(args.sdk[1], 'utf-8'))
                 targCtype = ctypes.c_char_p(bytes(depItem.targ, 'utf-8'))
                 c_lib.patchPbxprojTarg(projCtype, sdkrootCtype, versionCtype, targCtype)
-
-    # for groups in bsxml.Workspace.find_all("Group"):
-    #     for filerefs in groups.find_all("FileRef"):
-    #         fileRefLocation = filerefs["location"].replace("group:", "")
-    #         projName, projExtension = os.path.splitext(fileRefLocation)
-    #         if projExtension == ".xcodeproj":
-    #             projAbsPath = "{}/{}".format(os.path.dirname(wsPath), fileRefLocation)
-    #             projFilePath = os.path.basename(projAbsPath)
-    #             projName, projExtension = os.path.splitext(projFilePath)
-    #             if projName == args.project:
-    #                 # libname = pathlib.Path().absolute() # "libcmult.so"
-    #                 # modify sdk verison
-    #                 if (args.sdk != None) and (args.deps == None):
-    #                     print("patching {} with sdkroot {} and version {}".format(projAbsPath, args.sdk[0], args.sdk[1]))
-    #                     projCtype = ctypes.c_char_p(bytes("{}/{}".format(projAbsPath, "project.pbxproj"), 'utf-8'))
-    #                     sdkrootCtype = ctypes.c_char_p(bytes(args.sdk[0], 'utf-8'))
-    #                     versionCtype = ctypes.c_char_p(bytes(args.sdk[1], 'utf-8'))
-    #                     c_lib.patchPbxproj(projCtype, sdkrootCtype, versionCtype)
-    #                 # get library dependencies
-    #                 elif (args.deps != None) and (args.scheme == projName) and (args.sdk == None):
-    #                     projCtype = ctypes.c_char_p(bytes("{}/{}".format(projAbsPath, "project.pbxproj"), 'utf-8'))
-    #                     targCtype = ctypes.c_char_p(bytes(args.scheme, 'utf-8'))
-    #                     depsArray = (ctypes.c_char_p * 100)()
-    #                     depsCtype = ctypes.cast(depsArray, ctypes.POINTER(ctypes.c_char_p))
-    #                     c_lib.getTargFWDeps(projCtype, targCtype, depsCtype)
-    #                     for dependency in depsCtype:
-    #                         if dependency == None:
-    #                             break
-    #                         print(dependency.decode('utf-8'))
-                    # get project, framework and product hierarchy
-
-                    # get dependencies and patch them according to their matching values
-                    # elif (args.deps != None) and (args.scheme == projName) and (args.sdk != None):
-
-                        # c_lib.print5(sdkrootCtype, versionCtype, projCtype)
-
-
-    # Using find() to extract attributes
-    # of the first instance of the tag
-    # b_name = Bs_data.find('child', {'name':'Frank'})
-    
-    # print(b_name)
-    
-    # Extracting the data stored in a
-    # specific attribute of the
-    # `child` tag
-    # value = b_name.get('test')
-    
-    # print(value)
 
 if __name__ == "__main__":
     main()
