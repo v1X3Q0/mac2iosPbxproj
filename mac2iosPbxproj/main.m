@@ -8,6 +8,9 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdarg.h>
+
+#include <localUtil.h>
 
 #import <Foundation/Foundation.h>
 #import "XMLReader.h"
@@ -17,6 +20,10 @@ NSString* version_g;
 
 NSString* proj_sdkroot_g;
 NSString* proj_version_g;
+
+NSString* productType_g;
+
+NSString* headerSearchPath_g;
 
 typedef enum targetType
 {
@@ -28,14 +35,74 @@ typedef enum targetType
 
 typedef enum
 {
-    CLEAN_SDK=0,
-    ADD_HEADER
+    ROOT_SET=0,
+    CLEAN_SDK=1,
+    REMOVE_SUPPORT,
+    ADD_HEADER,
+    PROJ_PAIR_LIST
 } buildsettingOp_t;
 
 void dumpDict(NSDictionary* targDict)
 {
     for(id key in targDict)
         NSLog(@"key=%@ value=%@", key, [targDict objectForKey:key]);
+}
+
+void addHeader(NSMutableDictionary* buildSettings)
+{
+    [buildSettings removeObjectForKey:@"HEADER_SEARCH_PATHS"];
+    [buildSettings setObject:headerSearchPath_g forKey:@"HEADER_SEARCH_PATHS"];
+}
+
+void removeSupport(NSMutableDictionary* buildSettings)
+{
+    [buildSettings removeObjectForKey:@"SUPPORTED_PLATFORMS"];
+}
+
+int rootSetSdk(NSMutableDictionary* buildSettings)
+{
+    int result = -1;
+//        save the pbxproj's sdkroot and deployment target
+    NSString* sdkroot = [buildSettings objectForKey:@"SDKROOT"];
+    NSString* iphoneDep = [buildSettings objectForKey:@"IPHONEOS_DEPLOYMENT_TARGET"];
+    NSString* macDep = [buildSettings objectForKey:@"MACOSX_DEPLOYMENT_TARGET"];
+
+    [buildSettings removeObjectForKey:@"SUPPORTED_PLATFORMS"];
+    
+    proj_sdkroot_g = sdkroot;
+    if (iphoneDep != 0)
+    {
+        proj_version_g = iphoneDep;
+    }
+    if (macDep != 0)
+    {
+        proj_version_g = macDep;
+    }
+
+    //    add the new sdkroot if
+    //        am pbxproject and sdkroot does not match,
+    [buildSettings setObject:sdkroot_g forKey:@"SDKROOT"];
+    
+    if ([sdkroot_g isEqualToString:@"macosx"] == true)
+    {
+        [buildSettings removeObjectForKey:@"IPHONEOS_DEPLOYMENT_TARGET"];
+    }
+    else if ([sdkroot_g isEqualToString:@"iphoneos"] == false)
+    {
+        [buildSettings removeObjectForKey:@"MACOSX_DEPLOYMENT_TARGET"];
+    }
+    
+    if ([sdkroot_g isEqualToString:@"iphoneos"] == true)
+    {
+        [buildSettings setObject:version_g forKey:@"IPHONEOS_DEPLOYMENT_TARGET"];
+    }
+    else if ([sdkroot_g isEqualToString:@"macosx"] == true)
+    {
+        [buildSettings setObject:version_g forKey:@"MACOSX_DEPLOYMENT_TARGET"];
+    }
+    
+    result = 0;
+    return result;
 }
 
 void cleanSdk(targetType_t isRoot, NSString* productType, NSMutableDictionary* buildSettings)
@@ -51,23 +118,9 @@ void cleanSdk(targetType_t isRoot, NSString* productType, NSMutableDictionary* b
     bool isTool = [productType isEqualToString:@"com.apple.product-type.tool"];
 
     [buildSettings removeObjectForKey:@"SUPPORTED_PLATFORMS"];
-    if (isRoot == REM_SUPPORT)
-    {
-        continue;
-    }
+
+    FINISH_IF(isRoot == REM_SUPPORT);
     
-    if (isRoot == ROOT_NODE)
-    {
-        proj_sdkroot_g = sdkroot;
-        if (iphoneDep != 0)
-        {
-            proj_version_g = iphoneDep;
-        }
-        if (macDep != 0)
-        {
-            proj_version_g = macDep;
-        }
-    }
 //    remove the sdkroot if we have found it, we are not pbxproject, we are not an application or tool,
 //        and it does not match with the current one found.
     if (isRoot == NON_ROOT_NODE)
@@ -80,13 +133,8 @@ void cleanSdk(targetType_t isRoot, NSString* productType, NSMutableDictionary* b
             }
         }
     }
-//    add the new sdkroot if
-//        am pbxproject and sdkroot does not match,
-    if (isRoot == ROOT_NODE)
-    {
-        [buildSettings setObject:sdkroot_g forKey:@"SDKROOT"];
-    }
-    else if ((isRoot == NON_ROOT_NODE) || (isRoot == SPEC_NODE))
+    
+    if ((isRoot == NON_ROOT_NODE) || (isRoot == SPEC_NODE))
     {
 //    preserve the sdkroot if
 //        couldn't find sdkroot and:
@@ -109,18 +157,7 @@ void cleanSdk(targetType_t isRoot, NSString* productType, NSMutableDictionary* b
         }
     }
 
-    if (isRoot == ROOT_NODE)
-    {
-        if ([sdkroot_g isEqualToString:@"macosx"] == true)
-        {
-            [buildSettings removeObjectForKey:@"IPHONEOS_DEPLOYMENT_TARGET"];
-        }
-        else if ([sdkroot_g isEqualToString:@"iphoneos"] == false)
-        {
-            [buildSettings removeObjectForKey:@"MACOSX_DEPLOYMENT_TARGET"];
-        }
-    }
-    else if ((isRoot == NON_ROOT_NODE) || (isRoot == SPEC_NODE))
+    if ((isRoot == NON_ROOT_NODE) || (isRoot == SPEC_NODE))
     {
 //        we wanna remove the key key if we found it,
 //            we are not an app and we are not a tool
@@ -135,7 +172,35 @@ void cleanSdk(targetType_t isRoot, NSString* productType, NSMutableDictionary* b
     }
 //        we wanna add the replacement if we are root
 //        or we are an app or tool
-    if (isRoot == ROOT_NODE)
+    if (isApp == true)
+    {
+        if ([sdkroot_g isEqualToString:@"iphoneos"] == true)
+        {
+            [buildSettings setObject:version_g forKey:@"IPHONEOS_DEPLOYMENT_TARGET"];
+        }
+        else if ([sdkroot_g isEqualToString:@"macosx"] == true)
+        {
+            if (iphoneDep == 0)
+            {
+                [buildSettings setObject:proj_version_g forKey:@"IPHONEOS_DEPLOYMENT_TARGET"];
+            }
+        }
+    }
+    else if (isTool == true)
+    {
+        if ([sdkroot_g isEqualToString:@"macosx"] == true)
+        {
+            [buildSettings setObject:version_g forKey:@"MACOSX_DEPLOYMENT_TARGET"];
+        }
+        else if ([sdkroot_g isEqualToString:@"iphoneos"] == true)
+        {
+            if (macDep == 0)
+            {
+                [buildSettings setObject:proj_version_g forKey:@"MACOSX_DEPLOYMENT_TARGET"];
+            }
+        }
+    }
+    else if (isRoot == SPEC_NODE)
     {
         if ([sdkroot_g isEqualToString:@"iphoneos"] == true)
         {
@@ -146,51 +211,12 @@ void cleanSdk(targetType_t isRoot, NSString* productType, NSMutableDictionary* b
             [buildSettings setObject:version_g forKey:@"MACOSX_DEPLOYMENT_TARGET"];
         }
     }
-    else
-    {
-        if (isApp == true)
-        {
-            if ([sdkroot_g isEqualToString:@"iphoneos"] == true)
-            {
-                [buildSettings setObject:version_g forKey:@"IPHONEOS_DEPLOYMENT_TARGET"];
-            }
-            else if ([sdkroot_g isEqualToString:@"macosx"] == true)
-            {
-                if (iphoneDep == 0)
-                {
-                    [buildSettings setObject:proj_version_g forKey:@"IPHONEOS_DEPLOYMENT_TARGET"];
-                }
-            }
-        }
-        else if (isTool == true)
-        {
-            if ([sdkroot_g isEqualToString:@"macosx"] == true)
-            {
-                [buildSettings setObject:version_g forKey:@"MACOSX_DEPLOYMENT_TARGET"];
-            }
-            else if ([sdkroot_g isEqualToString:@"iphoneos"] == true)
-            {
-                if (macDep == 0)
-                {
-                    [buildSettings setObject:proj_version_g forKey:@"MACOSX_DEPLOYMENT_TARGET"];
-                }
-            }
-        }
-        else if (isRoot == SPEC_NODE)
-        {
-            if ([sdkroot_g isEqualToString:@"iphoneos"] == true)
-            {
-                [buildSettings setObject:version_g forKey:@"IPHONEOS_DEPLOYMENT_TARGET"];
-            }
-            else if ([sdkroot_g isEqualToString:@"macosx"] == true)
-            {
-                [buildSettings setObject:version_g forKey:@"MACOSX_DEPLOYMENT_TARGET"];
-            }
-        }
-    }
+finish:
+    return;
 }
 
-void parseBuildConfiguration(NSMutableDictionary* objects, NSString* buildConfigurationList, targetType_t isRoot, NSString* productType, buildsettingOp_t buildsettingOp)
+void parseBuildConfiguration(NSMutableDictionary* objects, NSString* buildConfigurationList,
+                             NSString* productType, buildsettingOp_t buildsettingOp)
 {
     NSDictionary* XCConfigurationList = [objects objectForKey:buildConfigurationList];
     NSArray* buildConfigurations = [XCConfigurationList objectForKey:@"buildConfigurations"];
@@ -201,11 +227,17 @@ void parseBuildConfiguration(NSMutableDictionary* objects, NSString* buildConfig
         
         switch (buildsettingOp)
         {
+            case ROOT_SET:
+                rootSetSdk(buildSettings);
+                break;
             case CLEAN_SDK:
                 cleanSdk(isRoot, productType, buildSettings);
                 break;
+            case REMOVE_SUPPORT:
+                removeSupport(buildSettings);
+                break;
             case ADD_HEADER:
-//                addHeader;
+                addHeader(buildSettings);
                 break;
         }
     }
@@ -242,11 +274,7 @@ int checkStr( char** depListOut, char* depRaw)
         {
             break;
         }
-        if (strcmp(depListOut[i], depRaw) == 0)
-        {
-            goto fail;
-        }
-        
+        SAFE_BAIL(strcmp(depListOut[i], depRaw) == 0);        
     }
     
     result = 0;
@@ -342,6 +370,190 @@ int parseWorkspace(NSString* xmlFile)
     NSDictionary *_xmlDictionary = [XMLReader dictionaryForXMLString:s error:&error];
 
     return result;
+}
+
+int initPbxProjParse(const char* project, NSMutableDictionary** objects_out,
+                     NSString** buildConfigurationList_out, NSDictionary** PBXProject_out)
+{
+    int result = -1;
+    size_t prodTargIter = 0;
+    char* prodNameOut = 0;
+    char* prodNameRaw = 0;
+    NSString* targNameO;
+    
+    NSString* plistFile = [NSString stringWithUTF8String:project];
+
+    CFURLRef url = (__bridge CFURLRef)[NSURL fileURLWithPath:plistFile];
+    NSDictionary *theDict = [NSDictionary dictionaryWithContentsOfFile:plistFile];
+    
+    NSString* rootObjVal = [theDict objectForKey:@"rootObject"];
+    NSMutableDictionary* objects = [theDict objectForKey:@"objects"];
+    NSDictionary* PBXProject = [objects objectForKey:rootObjVal];
+    NSString* buildConfigurationList = [PBXProject objectForKey:@"buildConfigurationList"];
+    
+finish:
+    if (objects_out != 0)
+    {
+        *objects_out = objects;
+    }
+    if (buildConfigurationList_out != 0)
+    {
+        *buildConfigurationList_out = buildConfigurationList;
+    }
+    if (PBXProject_out != 0)
+    {
+        *PBXProject_out = PBXProject
+    }
+    result = 0;
+fail:
+    return result;
+}
+
+int iterateTargetsCall(NSMutableDictionary* objects, NSString* buildConfigurationList,
+                       NSDictionary* PBXProject, NSString* targNameO, buildsettingOp_t buildsettingsOp, int nargs, ...)
+{
+    NSArray* targets = [PBXProject objectForKey:@"targets"];
+    for (id eachTarg in targets)
+    {
+        NSDictionary* PBXNativeTarget = [objects objectForKey:eachTarg];
+        NSString* productType = [PBXNativeTarget objectForKey:@"productType"];
+        buildConfigurationList = [PBXNativeTarget objectForKey:@"buildConfigurationList"];
+        NSString* prodName = [PBXNativeTarget objectForKey:@"name"];
+
+        if (targNameO != 0)
+        {
+            if ([prodName isEqualToString: targNameO] == true)
+            {
+                parseBuildConfiguration(objects, buildConfigurationList, SPEC_NODE, productType);
+            }
+        }
+        else
+        {
+            switch(func_enum)
+            {
+                case ADD_HEADER:
+                    parseBuildConfiguration(objects, buildConfigurationList, productType,
+                                            buildsettingOp);
+                    break;
+                case PROJ_PAIR_LIST:
+                    prodNameRaw = (char*)[prodName UTF8String];
+                    prodNameOut = malloc(strlen(prodNameRaw));
+                    strcpy(prodNameOut, prodNameRaw);
+                    prodTargPairList[prodTargIter] = prodNameOut;
+                    prodTargIter++;
+                    
+                    grabProdName(objects, PBXNativeTarget, &prodTargPairList[prodTargIter]);
+                    prodTargIter++;
+                    break;
+                case
+            }
+        }
+    }
+}
+
+int patchSdkRootOp(const char* project, const char* sdkroot, const char* targName)
+{
+    NSMutableDictionary* objects = 0;
+    NSString* buildConfigurationList = 0;
+    NSDictionary* PBXProject = 0;
+    NSString* targNameO = [NSString stringWithUTF8String:targName];
+    sdkroot_g = [NSString stringWithUTF8String:sdkroot];
+    initPbxProjParse(project, &objects, &buildConfigurationList, &PBXProject);
+    parseBuildConfiguration(objects, buildConfigurationList, ROOT_SET, NULL);
+
+    NSArray* targets = [PBXProject objectForKey:@"targets"];
+    for (id eachTarg in targets)
+    {
+        NSDictionary* PBXNativeTarget = [objects objectForKey:eachTarg];
+        NSString* productType = [PBXNativeTarget objectForKey:@"productType"];
+        buildConfigurationList = [PBXNativeTarget objectForKey:@"buildConfigurationList"];
+        NSString* prodName = [PBXNativeTarget objectForKey:@"name"];
+
+        if ([prodName isEqualToString: targNameO] == true)
+        {
+            parseBuildConfiguration(objects, buildConfigurationList, SPEC_NODE, productType);
+        }
+    }
+}
+
+int setHeaderSearchPath(const char* project, const char* headerSearchPath, const char* targName)
+{
+    NSString* buildConfigurationList;
+    NSMutableDictionary* objects;
+    NSString* targNameO = [NSString stringWithUTF8String:targName];
+    headerSearchPath_g = [NSString stringWithUTF8String:headerSearchPath];
+    initPbxProjParse(project, &objects, &buildConfigurationList);
+    
+    if (targName == 0)
+    {
+        parseBuildConfiguration(objects, buildConfigurationList, ADD_HEADER, NULL);
+    }
+    else
+    {
+        NSArray* targets = [PBXProject objectForKey:@"targets"];
+        for (id eachTarg in targets)
+        {
+            NSDictionary* PBXNativeTarget = [objects objectForKey:eachTarg];
+            NSString* productType = [PBXNativeTarget objectForKey:@"productType"];
+            buildConfigurationList = [PBXNativeTarget objectForKey:@"buildConfigurationList"];
+            NSString* prodName = [PBXNativeTarget objectForKey:@"name"];
+
+            if ([prodName isEqualToString: targNameO] == true)
+            {
+                parseBuildConfiguration(objects, buildConfigurationList, ADD_HEADER, productType);
+            }
+        }
+    }
+}
+
+int getProjPairList(const char* project, char** prodTargPairList)
+{
+    NSString* buildConfigurationList;
+    NSMutableDictionary* objects;
+    size_t prodTargIter = 0;
+    char* prodNameOut = 0;
+    char* prodNameRaw = 0;
+    initPbxProjParse(project, &objects, &buildConfigurationList);
+
+    NSArray* targets = [PBXProject objectForKey:@"targets"];
+    for (id eachTarg in targets)
+    {
+        NSDictionary* PBXNativeTarget = [objects objectForKey:eachTarg];
+        NSString* productType = [PBXNativeTarget objectForKey:@"productType"];
+        buildConfigurationList = [PBXNativeTarget objectForKey:@"buildConfigurationList"];
+        NSString* prodName = [PBXNativeTarget objectForKey:@"name"];
+
+        prodNameRaw = (char*)[prodName UTF8String];
+        prodNameOut = malloc(strlen(prodNameRaw));
+        strcpy(prodNameOut, prodNameRaw);
+        prodTargPairList[prodTargIter] = prodNameOut;
+        prodTargIter++;
+        
+        grabProdName(objects, PBXNativeTarget, &prodTargPairList[prodTargIter]);
+        prodTargIter++;
+    }
+}
+
+int getDeplist(const char* project, const char* targName, char** depsOutList)
+{
+    NSString* buildConfigurationList;
+    NSMutableDictionary* objects;
+    NSString* targNameO = [NSString stringWithUTF8String:targName];
+    initPbxProjParse(project, &objects, &buildConfigurationList);
+
+    NSArray* targets = [PBXProject objectForKey:@"targets"];
+    for (id eachTarg in targets)
+    {
+        NSDictionary* PBXNativeTarget = [objects objectForKey:eachTarg];
+        NSString* productType = [PBXNativeTarget objectForKey:@"productType"];
+        buildConfigurationList = [PBXNativeTarget objectForKey:@"buildConfigurationList"];
+        NSString* prodName = [PBXNativeTarget objectForKey:@"name"];
+
+        if ([prodName isEqualToString: targNameO])
+        {
+            grabProjDeps(objects, PBXNativeTarget, depsOutList);
+        }
+    }
 }
 
 int parsePbxproj_internal(const char* project, const char* sdkroot, const char* version, const char* targName, char** depsOutList, char** prodTargPairList)
